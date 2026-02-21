@@ -7,7 +7,6 @@ const DEFAULT_CONFIG = {
   cryptoIds: ["bitcoin", "ethereum", "solana", "cardano", "dogecoin", "ripple"],
 };
 
-// Save/load config from localStorage so settings persist across reloads
 function loadConfig() {
   try {
     const saved = localStorage.getItem("nexus-config");
@@ -29,7 +28,6 @@ function formatTime(date) {
   h = h % 12 || 12;
   return `${h}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
-
 function formatDate(date) {
   return `${DAYS[date.getDay()]}, ${MONTHS[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
 }
@@ -71,6 +69,26 @@ function parseICS(text) {
   return events.filter(e => e.start).sort((a,b) => a.start - b.start);
 }
 
+// Weather code to icon/description mapping
+function getWeatherInfo(code) {
+  if (code === 0) return { icon: "☀️", label: "Clear" };
+  if (code === 1) return { icon: "🌤️", label: "Mostly Clear" };
+  if (code === 2) return { icon: "⛅", label: "Partly Cloudy" };
+  if (code === 3) return { icon: "☁️", label: "Overcast" };
+  if (code === 45 || code === 48) return { icon: "🌫️", label: "Fog" };
+  if (code === 51 || code === 53 || code === 55) return { icon: "🌧️", label: "Drizzle" };
+  if (code === 56 || code === 57) return { icon: "🌧️", label: "Freezing Drizzle" };
+  if (code === 61 || code === 63 || code === 65) return { icon: "🌧️", label: "Rain" };
+  if (code === 66 || code === 67) return { icon: "🌧️", label: "Freezing Rain" };
+  if (code === 71 || code === 73 || code === 75) return { icon: "❄️", label: "Snow" };
+  if (code === 77) return { icon: "❄️", label: "Snow Grains" };
+  if (code === 80 || code === 81 || code === 82) return { icon: "🌦️", label: "Showers" };
+  if (code === 85 || code === 86) return { icon: "🌨️", label: "Snow Showers" };
+  if (code === 95) return { icon: "⛈️", label: "Thunderstorm" };
+  if (code === 96 || code === 99) return { icon: "⛈️", label: "Thunderstorm + Hail" };
+  return { icon: "☁️", label: "Cloudy" };
+}
+
 // ─── AURORA BACKGROUND ───────────────────────────────────────────────
 function AuroraBackground() {
   return (
@@ -108,7 +126,7 @@ function ClockWidget() {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
   return (
-    <div style={{ textAlign: "center", padding: "clamp(10px, 2vw, 20px) 0" }}>
+    <div style={{ textAlign: "center", padding: "clamp(6px, 1.5vw, 16px) 0" }}>
       <div style={{
         fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(36px, 7vw, 96px)",
         fontWeight: 700, letterSpacing: "4px",
@@ -128,7 +146,114 @@ function ClockWidget() {
   );
 }
 
-// ─── CALENDAR WIDGET ─────────────────────────────────────────────────
+// ─── WEATHER WIDGET ──────────────────────────────────────────────────
+function WeatherWidget({ weather }) {
+  if (!weather || !weather.daily) return (
+    <div style={{
+      background: "rgba(255,255,255,0.04)", borderRadius: "clamp(10px, 1.2vw, 16px)",
+      border: "1px solid rgba(255,255,255,0.08)", padding: "clamp(12px, 1.5vw, 20px)",
+      backdropFilter: "blur(20px)",
+    }}>
+      <div style={{
+        fontFamily: "'Outfit', sans-serif", fontSize: "clamp(10px, 1vw, 13px)", fontWeight: 600,
+        color: "rgba(255,255,255,0.4)", letterSpacing: 3, textTransform: "uppercase", marginBottom: 14,
+      }}>🌤️ Daily Forecast</div>
+      <div style={{ color: "rgba(255,255,255,0.25)", fontFamily: "'Outfit', sans-serif", fontSize: "clamp(11px, 1vw, 13px)", textAlign: "center", padding: "clamp(10px, 1.5vw, 20px) 0" }}>
+        Loading weather...
+      </div>
+    </div>
+  );
+
+  const { daily } = weather;
+  const today = new Date();
+
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.04)", borderRadius: "clamp(10px, 1.2vw, 16px)",
+      border: "1px solid rgba(255,255,255,0.08)", padding: "clamp(12px, 1.5vw, 20px)",
+      backdropFilter: "blur(20px)",
+    }}>
+      <div style={{
+        fontFamily: "'Outfit', sans-serif", fontSize: "clamp(10px, 1vw, 13px)", fontWeight: 600,
+        color: "rgba(255,255,255,0.4)", letterSpacing: 3, textTransform: "uppercase", marginBottom: "clamp(10px, 1.2vw, 14px)",
+      }}>🌤️ Daily Forecast</div>
+
+      {daily.time.map((date, i) => {
+        const d = new Date(date + "T12:00:00");
+        const isToday = i === 0;
+        const dayLabel = isToday ? "Today" : SHORT_DAYS[d.getDay()];
+        const { icon } = getWeatherInfo(daily.weathercode[i]);
+        const low = Math.round(daily.temperature_2m_min[i]);
+        const high = Math.round(daily.temperature_2m_max[i]);
+        const precip = daily.precipitation_probability_max[i];
+
+        // Temperature bar: position relative to the range across all 4 days
+        const allLows = daily.temperature_2m_min.map(Math.round);
+        const allHighs = daily.temperature_2m_max.map(Math.round);
+        const globalMin = Math.min(...allLows);
+        const globalMax = Math.max(...allHighs);
+        const range = globalMax - globalMin || 1;
+        const barLeft = ((low - globalMin) / range) * 100;
+        const barWidth = ((high - low) / range) * 100;
+
+        return (
+          <div key={i}>
+            {i > 0 && <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "0" }}/>}
+            <div style={{
+              display: "grid", gridTemplateColumns: "clamp(40px, 5vw, 60px) clamp(28px, 3.5vw, 40px) 1fr",
+              alignItems: "center", gap: "clamp(6px, 1vw, 12px)",
+              padding: "clamp(8px, 1vw, 12px) 0",
+            }}>
+              {/* Day label */}
+              <div style={{
+                fontFamily: "'Outfit', sans-serif", fontSize: "clamp(12px, 1.2vw, 16px)", fontWeight: 600,
+                color: isToday ? "#00d4ff" : "rgba(255,255,255,0.7)",
+              }}>
+                {dayLabel}
+              </div>
+
+              {/* Weather icon + precip */}
+              <div style={{ textAlign: "center", position: "relative" }}>
+                <div style={{ fontSize: "clamp(18px, 2vw, 28px)", lineHeight: 1 }}>{icon}</div>
+                {precip > 30 && (
+                  <div style={{
+                    fontFamily: "'Outfit', sans-serif", fontSize: "clamp(8px, 0.7vw, 10px)", fontWeight: 600,
+                    color: "#44aaff", marginTop: 1,
+                  }}>{precip}%</div>
+                )}
+              </div>
+
+              {/* Temp range bar */}
+              <div style={{ display: "flex", alignItems: "center", gap: "clamp(6px, 0.8vw, 10px)" }}>
+                <span style={{
+                  fontFamily: "'Outfit', sans-serif", fontSize: "clamp(12px, 1.2vw, 16px)", fontWeight: 500,
+                  color: "rgba(255,255,255,0.5)", minWidth: "clamp(26px, 3vw, 36px)", textAlign: "right",
+                }}>{low}°</span>
+                <div style={{
+                  flex: 1, height: "clamp(4px, 0.4vw, 6px)", borderRadius: 10,
+                  background: "rgba(255,255,255,0.08)", position: "relative", overflow: "hidden",
+                }}>
+                  <div style={{
+                    position: "absolute", top: 0, bottom: 0,
+                    left: `${barLeft}%`, width: `${Math.max(barWidth, 5)}%`,
+                    borderRadius: 10,
+                    background: "linear-gradient(90deg, #44aaff, #00d4ff, #00ffaa)",
+                  }}/>
+                </div>
+                <span style={{
+                  fontFamily: "'Outfit', sans-serif", fontSize: "clamp(12px, 1.2vw, 16px)", fontWeight: 600,
+                  color: "#fff", minWidth: "clamp(26px, 3vw, 36px)",
+                }}>{high}°</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── CALENDAR WIDGET (compact — reduced by 2/3) ─────────────────────
 function CalendarWidget({ events, loading, onOpenSettings }) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -145,31 +270,27 @@ function CalendarWidget({ events, loading, onOpenSettings }) {
   return (
     <div style={{
       background: "rgba(255,255,255,0.04)", borderRadius: "clamp(10px, 1.2vw, 16px)",
-      border: "1px solid rgba(255,255,255,0.08)", padding: "clamp(14px, 2vw, 24px)", height: "100%",
+      border: "1px solid rgba(255,255,255,0.08)", padding: "clamp(10px, 1.2vw, 16px)",
       backdropFilter: "blur(20px)", overflow: "auto",
     }}>
       <div style={{
-        fontFamily: "'Outfit', sans-serif", fontSize: "clamp(11px, 1.1vw, 13px)", fontWeight: 600,
-        color: "rgba(255,255,255,0.4)", letterSpacing: 3, textTransform: "uppercase", marginBottom: 16,
+        fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.9vw, 11px)", fontWeight: 600,
+        color: "rgba(255,255,255,0.4)", letterSpacing: 3, textTransform: "uppercase", marginBottom: "clamp(6px, 0.8vw, 10px)",
       }}>
         📅 Upcoming Events
       </div>
 
       {loading && (
-        <div style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Outfit', sans-serif", fontSize: 14, textAlign: "center", padding: 40 }}>
-          <div style={{ animation: "pulse 1.5s ease-in-out infinite" }}>Loading calendars...</div>
+        <div style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Outfit', sans-serif", fontSize: 12, textAlign: "center", padding: 16 }}>
+          <div style={{ animation: "pulse 1.5s ease-in-out infinite" }}>Loading...</div>
           <style>{`@keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
         </div>
       )}
 
       {!loading && events.length === 0 && (
-        <div style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Outfit', sans-serif", fontSize: 14, textAlign: "center", padding: 40 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🗓️</div>
-          Add calendar URLs in <span onClick={onOpenSettings} style={{ color: "#00d4ff", cursor: "pointer", textDecoration: "underline" }}>settings</span> to see your events.
-          <br/><br/>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.2)" }}>
-            Supports Google Calendar, Apple iCloud, and any .ics URL
-          </span>
+        <div style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'Outfit', sans-serif", fontSize: 11, textAlign: "center", padding: 16 }}>
+          <div style={{ fontSize: 24, marginBottom: 6 }}>🗓️</div>
+          Add calendar URLs in <span onClick={onOpenSettings} style={{ color: "#00d4ff", cursor: "pointer", textDecoration: "underline" }}>settings</span>
         </div>
       )}
 
@@ -177,24 +298,27 @@ function CalendarWidget({ events, loading, onOpenSettings }) {
         const d = new Date(dateStr);
         const isToday = d.toDateString() === today.toDateString();
         return (
-          <div key={dateStr} style={{ marginBottom: "clamp(12px, 1.5vw, 20px)" }}>
+          <div key={dateStr} style={{ marginBottom: "clamp(4px, 0.6vw, 8px)" }}>
             <div style={{
-              fontFamily: "'Outfit', sans-serif", fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 600,
-              color: isToday ? "#00d4ff" : "rgba(255,255,255,0.5)", marginBottom: 8,
+              fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.9vw, 11px)", fontWeight: 600,
+              color: isToday ? "#00d4ff" : "rgba(255,255,255,0.5)", marginBottom: 3,
             }}>
               {isToday ? "Today" : `${SHORT_DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`}
             </div>
             {dayEvents.map((ev, ei) => (
               <div key={ei} style={{
-                display: "flex", gap: 12, padding: "clamp(6px, 0.8vw, 10px) clamp(8px, 1vw, 14px)", marginBottom: 6,
-                background: "rgba(255,255,255,0.03)", borderRadius: 10,
-                borderLeft: `3px solid ${ACCENT_COLORS[(di + ei) % ACCENT_COLORS.length]}`,
+                display: "flex", gap: 8, padding: "clamp(3px, 0.4vw, 5px) clamp(6px, 0.7vw, 10px)", marginBottom: 3,
+                background: "rgba(255,255,255,0.03)", borderRadius: 6,
+                borderLeft: `2px solid ${ACCENT_COLORS[(di + ei) % ACCENT_COLORS.length]}`,
               }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(12px, 1.1vw, 14px)", fontWeight: 500, color: "#fff" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: "'Outfit', sans-serif", fontSize: "clamp(10px, 0.9vw, 12px)", fontWeight: 500,
+                    color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
                     {ev.title}
                   </div>
-                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(10px, 0.9vw, 12px)", color: "rgba(255,255,255,0.4)", marginTop: 2 }}>
+                  <div style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(8px, 0.7vw, 10px)", color: "rgba(255,255,255,0.35)" }}>
                     {ev.allDay ? "All Day" : formatTime(ev.start)}
                     {ev.location ? ` · ${ev.location}` : ""}
                   </div>
@@ -282,12 +406,8 @@ function StockTicker({ stocks }) {
       }}>
         {items.map((s, i) => (
           <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: "clamp(4px, 0.6vw, 10px)", flexShrink: 0 }}>
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(10px, 1vw, 13px)", fontWeight: 700, color: "#fff", letterSpacing: 1 }}>
-              {s.symbol}
-            </span>
-            <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(11px, 1.1vw, 14px)", color: "rgba(255,255,255,0.8)" }}>
-              ${s.price?.toFixed(2)}
-            </span>
+            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(10px, 1vw, 13px)", fontWeight: 700, color: "#fff", letterSpacing: 1 }}>{s.symbol}</span>
+            <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(11px, 1.1vw, 14px)", color: "rgba(255,255,255,0.8)" }}>${s.price?.toFixed(2)}</span>
             <span style={{
               fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.9vw, 12px)", fontWeight: 600,
               color: s.change >= 0 ? "#00ffaa" : "#ff4444",
@@ -301,10 +421,7 @@ function StockTicker({ stocks }) {
         ))}
       </div>
       <style>{`
-        @keyframes tickerScroll {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-33.333%); }
-        }
+        @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-33.333%); } }
       `}</style>
     </div>
   );
@@ -316,7 +433,7 @@ function CryptoTicker({ cryptos }) {
   const items = [...cryptos, ...cryptos, ...cryptos];
   return (
     <div style={{
-      background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.7))",
+      background: "linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.6))",
       borderTop: "1px solid rgba(255,255,255,0.06)",
       overflow: "hidden", padding: "clamp(6px, 0.8vw, 10px) 0", position: "relative",
       backdropFilter: "blur(10px)",
@@ -331,9 +448,7 @@ function CryptoTicker({ cryptos }) {
         {items.map((c, i) => (
           <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: "clamp(4px, 0.6vw, 10px)", flexShrink: 0 }}>
             {c.image && <img src={c.image} alt="" style={{ width: "clamp(14px, 1.4vw, 20px)", height: "clamp(14px, 1.4vw, 20px)", borderRadius: "50%" }}/>}
-            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(9px, 0.9vw, 12px)", fontWeight: 700, color: "#fff", letterSpacing: 1, textTransform: "uppercase" }}>
-              {c.symbol}
-            </span>
+            <span style={{ fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(9px, 0.9vw, 12px)", fontWeight: 700, color: "#fff", letterSpacing: 1, textTransform: "uppercase" }}>{c.symbol}</span>
             <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(11px, 1.1vw, 14px)", color: "rgba(255,255,255,0.8)" }}>
               ${c.price?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
@@ -350,10 +465,7 @@ function CryptoTicker({ cryptos }) {
         ))}
       </div>
       <style>{`
-        @keyframes cryptoScroll {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-33.333%); }
-        }
+        @keyframes cryptoScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-33.333%); } }
       `}</style>
     </div>
   );
@@ -368,7 +480,6 @@ function SettingsModal({ config, setConfig, onClose }) {
 
   const addCal = () => {
     if (calUrl.trim()) {
-      // Normalize webcal:// to https://
       let url = calUrl.trim().replace(/^webcal:\/\//, "https://");
       setConfig(c => ({ ...c, calendarUrls: [...c.calendarUrls, url] }));
       setCalUrl("");
@@ -422,9 +533,7 @@ function SettingsModal({ config, setConfig, onClose }) {
             fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(16px, 1.6vw, 20px)", fontWeight: 700,
             background: "linear-gradient(135deg, #00d4ff, #7b2ff7)",
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-          }}>
-            ⚙ Settings
-          </div>
+          }}>⚙ Settings</div>
           <button onClick={onClose} style={{
             background: "rgba(255,255,255,0.1)", border: "none", borderRadius: "50%",
             width: 36, height: 36, color: "#fff", fontSize: 18, cursor: "pointer",
@@ -434,8 +543,7 @@ function SettingsModal({ config, setConfig, onClose }) {
         <div style={sectionTitle}>Calendar Feeds (iCal / .ics URLs)</div>
         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'Outfit', sans-serif", marginBottom: 10, lineHeight: 1.5 }}>
           <b style={{ color: "rgba(255,255,255,0.5)" }}>Google:</b> Settings → Calendar → "Secret address in iCal format"<br/>
-          <b style={{ color: "rgba(255,255,255,0.5)" }}>Apple:</b> iCloud.com → Calendar → Share → Public Calendar link<br/>
-          <span style={{ color: "rgba(0,212,255,0.5)" }}>webcal:// links are automatically converted to https://</span>
+          <b style={{ color: "rgba(255,255,255,0.5)" }}>Apple:</b> iCloud.com → Calendar → Share → Public Calendar link
         </div>
         {config.calendarUrls.map((url, i) => (
           <div key={i} style={{ marginBottom: 8 }}>
@@ -470,21 +578,13 @@ function SettingsModal({ config, setConfig, onClose }) {
         <div style={sectionTitle}>Stock Symbols</div>
         <input value={stockInput} onChange={e => setStockInput(e.target.value)} onBlur={saveStocks}
           placeholder="AAPL, GOOGL, MSFT..." style={inputStyle}/>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", fontFamily: "'Outfit', sans-serif", marginTop: 4 }}>
-          Comma-separated ticker symbols
-        </div>
 
         <div style={sectionTitle}>Cryptocurrency IDs</div>
         <input value={cryptoInput} onChange={e => setCryptoInput(e.target.value)} onBlur={saveCryptos}
           placeholder="bitcoin, ethereum, solana..." style={inputStyle}/>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.2)", fontFamily: "'Outfit', sans-serif", marginTop: 4 }}>
-          Comma-separated CoinGecko IDs
-        </div>
 
         <div style={{ marginTop: 30, textAlign: "center" }}>
-          <button onClick={onClose} style={{ ...btnStyle, width: "100%", padding: "14px 20px" }}>
-            Save & Close
-          </button>
+          <button onClick={onClose} style={{ ...btnStyle, width: "100%", padding: "14px 20px" }}>Save & Close</button>
         </div>
       </div>
     </div>
@@ -517,13 +617,28 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [stocks, setStocks] = useState(DEMO_STOCKS);
   const [cryptos, setCryptos] = useState(DEMO_CRYPTOS);
+  const [weather, setWeather] = useState(null);
   const [calLoading, setCalLoading] = useState(false);
   const [dataLabel, setDataLabel] = useState("demo");
 
-  // Persist config changes
   useEffect(() => { saveConfig(config); }, [config]);
 
-  // Fetch calendars via server proxy (no CORS issues)
+  // Get user location and fetch weather
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const resp = await fetch(`/api/weather?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+            const data = await resp.json();
+            if (data?.daily) setWeather(data);
+          } catch (e) { console.warn("Weather fetch error:", e); }
+        },
+        (err) => { console.warn("Geolocation denied:", err.message); }
+      );
+    }
+  }, []);
+
   const fetchCalendars = useCallback(async () => {
     if (config.calendarUrls.length === 0) { setEvents([]); return; }
     setCalLoading(true);
@@ -531,39 +646,30 @@ export default function Dashboard() {
     for (const url of config.calendarUrls) {
       try {
         const resp = await fetch(`/api/calendar?url=${encodeURIComponent(url)}`);
-        if (resp.ok) {
-          const text = await resp.text();
-          allEvents.push(...parseICS(text));
-        }
+        if (resp.ok) { allEvents.push(...parseICS(await resp.text())); }
       } catch (e) { console.warn("Calendar fetch error:", e); }
     }
     setEvents(allEvents);
     setCalLoading(false);
   }, [config.calendarUrls]);
 
-  // Fetch stock data via server proxy
   const fetchStocks = useCallback(async () => {
     try {
-      const symbols = config.stockSymbols.join(",");
-      const resp = await fetch(`/api/stocks?symbols=${symbols}`);
+      const resp = await fetch(`/api/stocks?symbols=${config.stockSymbols.join(",")}`);
       const data = await resp.json();
       if (data?.quoteResponse?.result?.length) {
         setStocks(data.quoteResponse.result.map(q => ({
-          symbol: q.symbol,
-          price: q.regularMarketPrice,
-          change: q.regularMarketChange,
-          changePercent: q.regularMarketChangePercent,
+          symbol: q.symbol, price: q.regularMarketPrice,
+          change: q.regularMarketChange, changePercent: q.regularMarketChangePercent,
         })));
         setDataLabel("live");
       }
     } catch (e) { console.warn("Stock fetch fallback to demo:", e); }
   }, [config.stockSymbols]);
 
-  // Fetch crypto data (CoinGecko allows CORS, but we proxy anyway for reliability)
   const fetchCryptos = useCallback(async () => {
     try {
-      const ids = config.cryptoIds.join(",");
-      const resp = await fetch(`/api/crypto?ids=${ids}`);
+      const resp = await fetch(`/api/crypto?ids=${config.cryptoIds.join(",")}`);
       const data = await resp.json();
       if (Array.isArray(data) && data.length) {
         setCryptos(data.map(c => ({
@@ -616,31 +722,20 @@ export default function Dashboard() {
           fontFamily: "'Orbitron', sans-serif", fontSize: "clamp(12px, 1.3vw, 16px)", fontWeight: 800,
           background: "linear-gradient(135deg, #00d4ff, #7b2ff7, #ff0080)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", letterSpacing: 3,
-        }}>
-          NEXUS BOARD
-        </div>
+        }}>NEXUS BOARD</div>
         <div style={{ display: "flex", gap: "clamp(6px, 0.8vw, 12px)", alignItems: "center" }}>
           {dataLabel === "demo" && (
-            <span style={{
-              fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.8vw, 11px)", color: "rgba(255,165,0,0.7)",
-              background: "rgba(255,165,0,0.1)", padding: "3px 10px", borderRadius: 20,
-            }}>DEMO DATA</span>
+            <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.8vw, 11px)", color: "rgba(255,165,0,0.7)", background: "rgba(255,165,0,0.1)", padding: "3px 10px", borderRadius: 20 }}>DEMO DATA</span>
           )}
           {dataLabel === "live" && (
-            <span style={{
-              fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.8vw, 11px)", color: "rgba(0,255,170,0.7)",
-              background: "rgba(0,255,170,0.1)", padding: "3px 10px", borderRadius: 20,
-              display: "flex", alignItems: "center", gap: 4,
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#00ffaa", animation: "pulse 2s infinite" }}/>
-              LIVE
+            <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: "clamp(9px, 0.8vw, 11px)", color: "rgba(0,255,170,0.7)", background: "rgba(0,255,170,0.1)", padding: "3px 10px", borderRadius: 20, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#00ffaa", animation: "pulse 2s infinite" }}/>LIVE
             </span>
           )}
           <button onClick={() => setShowSettings(true)} style={{
             background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 10, padding: "clamp(4px, 0.6vw, 8px) clamp(8px, 1.2vw, 16px)",
-            color: "#fff", fontFamily: "'Outfit', sans-serif",
-            fontSize: "clamp(10px, 1vw, 13px)", cursor: "pointer", fontWeight: 500,
+            color: "#fff", fontFamily: "'Outfit', sans-serif", fontSize: "clamp(10px, 1vw, 13px)", cursor: "pointer", fontWeight: 500,
           }}>⚙ Settings</button>
         </div>
       </div>
@@ -648,6 +743,11 @@ export default function Dashboard() {
       {/* Stock Ticker */}
       <div style={{ position: "relative", zIndex: 10, flexShrink: 0 }}>
         <StockTicker stocks={stocks}/>
+      </div>
+
+      {/* Crypto Ticker — now directly under stocks */}
+      <div style={{ position: "relative", zIndex: 10, flexShrink: 0 }}>
+        <CryptoTicker cryptos={cryptos}/>
       </div>
 
       {/* Main Content */}
@@ -659,7 +759,7 @@ export default function Dashboard() {
         {/* Left Column */}
         <div style={{ display: "flex", flexDirection: "column", gap: "clamp(8px, 1.5vw, 24px)", minHeight: 0 }}>
           <ClockWidget/>
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+          <div style={{ flex: "0 0 auto", maxHeight: "30%", overflow: "auto" }}>
             <CalendarWidget events={events} loading={calLoading} onOpenSettings={() => setShowSettings(true)}/>
           </div>
         </div>
@@ -667,6 +767,9 @@ export default function Dashboard() {
         {/* Right Column */}
         <div className="nx-sidebar" style={{ display: "flex", flexDirection: "column", gap: "clamp(8px, 1.5vw, 24px)", minHeight: 0, overflow: "auto" }}>
           <MiniCalendar events={events}/>
+          <WeatherWidget weather={weather}/>
+
+          {/* Market Snapshot */}
           <div style={{
             background: "rgba(255,255,255,0.04)", borderRadius: "clamp(10px, 1.2vw, 16px)",
             border: "1px solid rgba(255,255,255,0.08)", padding: "clamp(12px, 1.5vw, 20px)",
@@ -718,11 +821,6 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Crypto Ticker */}
-      <div style={{ position: "relative", zIndex: 10, flexShrink: 0 }}>
-        <CryptoTicker cryptos={cryptos}/>
       </div>
 
       {showSettings && <SettingsModal config={config} setConfig={setConfig} onClose={() => setShowSettings(false)}/>}
